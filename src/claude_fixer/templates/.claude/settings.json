@@ -1,0 +1,49 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status)",
+      "Bash(git status *)",
+      "Bash(git diff)",
+      "Bash(git diff *)",
+      "Bash(git log)",
+      "Bash(git log *)",
+      "Bash(git show *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git checkout *)",
+      "Bash(git branch)",
+      "Bash(git branch *)",
+      "Bash(git merge *)",
+      "Bash(git pull)",
+      "Bash(git pull *)",
+      "Bash(git push *)",
+      "Bash(python *)",
+      "Bash(python3 *)",
+      "Bash(pytest)",
+      "Bash(pytest *)",
+      "Bash(pip *)",
+      "Bash(ruff *)",
+      "Bash(mypy *)",
+      "Read",
+      "Edit",
+      "Write"
+    ],
+    "deny": [
+      "Bash(git push * main)",
+      "Bash(git push * main *)",
+      "Bash(git push * master)",
+      "Bash(git push * master *)",
+      "Bash(git push * production)",
+      "Bash(git push * production *)",
+      "Bash(git push * prod)",
+      "Bash(git push * prod *)",
+      "Bash(git push --force *)",
+      "Bash(rm -rf *)",
+      "Bash(sudo *)"
+    ]
+  },
+  "attribution": {
+    "commit": "\n\nGenerated with Claude Code",
+    "pr": "Generated with Claude Code"
+  }
+}
