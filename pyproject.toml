@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "claude-ds-tools"
-version = "0.1.0"
+version = "0.1.1"
 description = "CLI tool to standardize and safely sync the .claude configuration folder across DS projects"
 requires-python = ">=3.7"
 dependencies = []
@@ -12,5 +12,12 @@ dependencies = []
 [project.scripts]
 setup-claude = "claude_fixer.cli:main"
 
+[tool.setuptools.packages.find]
+where = ["src"]
+
 [tool.setuptools.package-data]
-"claude_fixer" = ["templates/**/*", "templates/**"]
+"claude_fixer" = [
+    "templates/.claude/*",
+    "templates/.claude/rules/*",
+    "templates/.claude/agents/*",
+]
