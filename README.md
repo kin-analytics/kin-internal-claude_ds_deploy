@@ -1,16 +1,14 @@
 # claude-ds-tools
 
-A CLI tool that safely syncs Kin Analytics' standard `.claude` configuration into any Data Science project — without overwriting custom files.
+A CLI tool that syncs Kin Analytics' standard `.claude` configuration into any Data Science project. Standard files are always kept up to date; files you created yourself are never touched.
 
 ---
 
 ## Installation
 
 ```bash
-pip install git+https://github.com/kin-analytics/kin-internal-claude_ds_deploy.git 
+pip install git+https://github.com/kin-analytics/kin-internal-claude_ds_deploy.git
 ```
-
-> Requires your GitHub account to be part of the `kin-analytics` organization.
 
 ---
 
@@ -24,12 +22,13 @@ setup-claude
 
 **What it does:**
 - If `.claude/` does not exist → creates it with all standard files.
-- If `.claude/` already exists → adds only the files and subdirectory entries that are missing. Your custom agents, rules, or prompts are never touched.
+- If `.claude/` already exists → updates all standard files to the latest version and leaves any custom files you created untouched.
+- Writes a `.claude/VERSION` file so you can always check what version is installed.
 
 ### Updating to the latest standard templates
 
 ```bash
-pip install --upgrade git+ssh://git@github.com/kin-analytics/kin-internal-claude_ds_deploy.git
+pip install --force-reinstall git+https://github.com/kin-analytics/kin-internal-claude_ds_deploy.git
 setup-claude
 ```
 
@@ -40,11 +39,12 @@ setup-claude
 ```
 .claude/
 ├── CONTEXT.md                        # Project context & Kin Analytics conventions
-├── settings.json                     # Claude Code permissions (read-only git, no destructive ops)
+├── settings.json                     # Claude Code permissions
 ├── kin-coding-agent-instructions.md  # Hard coding requirements (always active)
+├── VERSION                           # Installed version (auto-generated)
 ├── rules/
 │   ├── python.md                     # Python style guide
-│   └── security.md                  # Security & data-privacy rules
+│   └── security.md                   # Security & data-privacy rules
 └── agents/
     ├── code-reviewer.md              # Code review methodology
     ├── debugger.md                   # Root-cause debugging protocol
@@ -54,35 +54,16 @@ setup-claude
 
 ---
 
-## Safe-merge behavior
-
-The sync is **additive only**:
+## Sync behavior
 
 | Situation | Action |
 |-----------|--------|
-| File exists in standard template, missing from project | Copied |
-| File exists in both standard template and project | Skipped (yours is kept) |
-| File exists only in project (your custom agent, etc.) | Left untouched |
-| New file added inside an existing standard subdirectory | Copied (recursive merge) |
-
----
-
-## Project structure
-
-```
-kin-internal-claude_ds_deploy/
-├── pyproject.toml
-├── README.md
-├── GOAL.md
-└── src/
-    └── claude_fixer/
-        ├── cli.py               # Entry point logic
-        └── templates/
-            └── .claude/         # Master template files
-```
+| File exists in standard template | Always updated to latest version |
+| File exists only in your project (custom agent, etc.) | Left untouched |
+| New file added to standard template | Copied to your project |
 
 ---
 
 ## Contributing
 
-Edit files inside `src/claude_fixer/templates/.claude/` to update the standard templates. Bump the version in `pyproject.toml`, push, and DS users will get the new files on their next `pip install --upgrade` + `setup-claude`.
+Edit files inside `src/claude_fixer/templates/.claude/`, bump the version in `pyproject.toml`, and push. DS users get the updates on their next reinstall + `setup-claude`.
