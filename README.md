@@ -7,8 +7,10 @@ A CLI tool that safely syncs Kin Analytics' standard `.claude` configuration int
 ## Installation
 
 ```bash
-pip install git+https://github.com/your-org/kin-internal-claude_ds_deploy.git
+pip install git+https://github.com/kin-analytics/kin-internal-claude_ds_deploy.git 
 ```
+
+> Requires your GitHub account to be part of the `kin-analytics` organization.
 
 ---
 
@@ -27,7 +29,7 @@ setup-claude
 ### Updating to the latest standard templates
 
 ```bash
-pip install --upgrade git+https://github.com/your-org/kin-internal-claude_ds_deploy.git
+pip install --upgrade git+ssh://git@github.com/kin-analytics/kin-internal-claude_ds_deploy.git
 setup-claude
 ```
 
