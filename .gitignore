@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Secrets & credentials
+.env
+.env.*
+*credentials*
+*secrets*
+*service_account*.json
+*.pem
+*.key
+
+# Data files
+data/raw/
+data/client/
+data/external/
+*.csv
+*.parquet
+*.xlsx
+
+# Cloud provider artifacts
+.aws/
+.gcp/
+
+# IDE
+.idea/
+.vscode/

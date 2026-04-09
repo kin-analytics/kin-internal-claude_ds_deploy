@@ -57,6 +57,7 @@ def _sync_claude_md(project_root: Path, target_path: Path, dry_run: bool = False
         dry_run: If True, print what would happen without making any changes.
     """
     dest_claude_md = target_path / "CLAUDE.md"
+    found = None
 
     if not dest_claude_md.exists():
         # Search for CLAUDE.md anywhere in the project (skip hidden dirs and venvs)
@@ -76,8 +77,13 @@ def _sync_claude_md(project_root: Path, target_path: Path, dry_run: bool = False
                 dest_claude_md.write_text("")
             print(f"  added    : .claude/CLAUDE.md (created)")
 
-    # Check if import line is already present (read actual file or assume absent in dry-run when file doesn't exist)
-    content = dest_claude_md.read_text() if dest_claude_md.exists() else ""
+    # Check if import line is already present; in dry-run a moved file won't be at dest yet
+    if dest_claude_md.exists():
+        content = dest_claude_md.read_text()
+    elif found:
+        content = found.read_text()
+    else:
+        content = ""
     if CONTEXT_IMPORT not in content:
         if not dry_run:
             separator = "\n" if content and not content.endswith("\n") else ""
