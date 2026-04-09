@@ -1,6 +1,9 @@
 import argparse
 import shutil
-from importlib.metadata import version, PackageNotFoundError
+try:
+    from importlib.metadata import version, PackageNotFoundError
+except ImportError:
+    from importlib_metadata import version, PackageNotFoundError  # type: ignore[no-redef]
 from pathlib import Path
 
 
@@ -61,12 +64,16 @@ def _sync_claude_md(project_root: Path, target_path: Path, dry_run: bool = False
 
     if not dest_claude_md.exists():
         # Search for CLAUDE.md anywhere in the project (skip hidden dirs and venvs)
-        skip_dirs = {".git", ".venv", "venv", "env", "__pycache__", "node_modules"}
+        skip_dirs = {".git", ".venv", "venv", "env", "__pycache__", "node_modules", "build", "dist", ".eggs"}
         found = None
-        for candidate in project_root.rglob("CLAUDE.md"):
-            if not any(part in skip_dirs for part in candidate.parts):
-                found = candidate
-                break
+        root_claude = project_root / "CLAUDE.md"
+        if root_claude.exists():
+            found = root_claude
+        else:
+            for candidate in project_root.rglob("CLAUDE.md"):
+                if not any(part in skip_dirs for part in candidate.parts):
+                    found = candidate
+                    break
 
         if found:
             if not dry_run:
