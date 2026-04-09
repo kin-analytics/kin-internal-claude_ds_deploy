@@ -1,0 +1,203 @@
+name: '🔒 Gemini Security Review'
+
+on:
+  workflow_call:
+
+concurrency:
+  group: 'gemini-security-review-${{ github.event.pull_request.number }}'
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: 'bash'
+
+jobs:
+  security-review:
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 7
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      issues: 'write'
+      pull-requests: 'write'
+    steps:
+      - name: 'Mint identity token'
+        id: 'mint_identity_token'
+        if: |-
+          ${{ vars.APP_ID }}
+        uses: 'actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf' # ratchet:actions/create-github-app-token@v2
+        with:
+          app-id: '${{ vars.APP_ID }}'
+          private-key: '${{ secrets.APP_PRIVATE_KEY }}'
+          permission-contents: 'read'
+          permission-issues: 'write'
+          permission-pull-requests: 'write'
+
+      - name: 'Checkout repository'
+        uses: 'actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8' # ratchet:actions/checkout@v6
+
+      - name: 'Run Gemini security review'
+        uses: 'google-github-actions/run-gemini-cli@v0' # ratchet:exclude
+        id: 'gemini_security_review'
+        env:
+          GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
+          PULL_REQUEST_NUMBER: '${{ github.event.pull_request.number }}'
+          REPOSITORY: '${{ github.repository }}'
+          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
+        with:
+          gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
+          gcp_project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          gcp_service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
+          gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
+          gemini_api_key: '${{ secrets.GEMINI_API_KEY }}'
+          gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
+          gemini_debug: '${{ fromJSON(vars.GEMINI_DEBUG || vars.ACTIONS_STEP_DEBUG || false) }}'
+          gemini_model: '${{ vars.GEMINI_MODEL }}'
+          google_api_key: '${{ secrets.GOOGLE_API_KEY }}'
+          use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
+          use_vertex_ai: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
+          upload_artifacts: '${{ vars.UPLOAD_ARTIFACTS }}'
+          workflow_name: 'gemini-security-review'
+          github_pr_number: '${{ github.event.pull_request.number || github.event.issue.number }}'
+          settings: |-
+            {
+              "model": {
+                "maxSessionTurns": 25
+              },
+              "telemetry": {
+                "enabled": true,
+                "target": "local",
+                "outfile": ".gemini/telemetry.log"
+              },
+              "mcpServers": {
+                "github": {
+                  "command": "docker",
+                  "args": [
+                    "run",
+                    "-i",
+                    "--rm",
+                    "-e",
+                    "GITHUB_PERSONAL_ACCESS_TOKEN",
+                    "ghcr.io/github/github-mcp-server:v0.27.0"
+                  ],
+                  "includeTools": [
+                    "add_comment_to_pending_review",
+                    "pull_request_read",
+                    "pull_request_review_write"
+                  ],
+                  "env": {
+                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+                  }
+                }
+              },
+              "tools": {
+                "core": [
+                  "run_shell_command(cat)",
+                  "run_shell_command(echo)",
+                  "run_shell_command(grep)",
+                  "run_shell_command(head)",
+                  "run_shell_command(tail)"
+                ]
+              }
+            }
+          prompt: |-
+            You are an aggressive security and hardcoding reviewer. Your default stance is ZERO TOLERANCE for hardcoded values. When in doubt, flag it — over-alerting is always preferred over missing a real issue.
+
+            Use the GitHub MCP tools to:
+            1. Get the list of changed files in PR #${{ github.event.pull_request.number }} in repository ${{ github.repository }}.
+            2. For each changed file, read its full content and scan exhaustively for ALL categories below.
+
+            ## Core Principle
+            ANY value that could differ between environments, machines, users, or deployments MUST come from environment variables, config files, or a secrets manager — NEVER hardcoded in source code. This includes values that "look safe" like bucket names, region names, or internal URLs.
+
+            ## Scan Categories
+
+            ### 1. Secrets & Credentials (CRITICAL if found)
+            Flag immediately:
+            - API keys, tokens, passwords in any form: `AKIA`, `sk-`, `ghp_`, `xoxb-`, `Bearer `, `token =`, `password =`, `passwd =`, `secret =`, `api_key =`, `auth =`
+            - Base64-looking strings longer than 40 chars assigned to a variable
+            - Connection strings with embedded credentials: `postgresql://user:pass@host`, `mongodb+srv://...`, `mysql://user:pass@...`
+            - Private keys, certificates, JWTs assigned to variables
+            - Secrets in comments (`# use this key: ...`) — they survive in git history
+            - OAuth client secrets, webhook secrets, signing keys
+            Show only first 4 chars + `...` — never the full value.
+
+            ### 2. Hardcoded Infrastructure & Configuration (HIGH if found)
+            Flag ANY of these appearing as string literals in code (not in config files like yaml/json/toml):
+            - **Cloud bucket/container names**: S3 bucket names, GCS buckets, Azure containers (e.g. `"my-company-prod-data"`)
+            - **Cloud account/project IDs**: AWS account IDs, GCP project IDs, Azure subscription IDs
+            - **Cloud regions**: `"us-east-1"`, `"eu-west-2"`, `"us-central1"` hardcoded in Python/JS/etc.
+            - **Internal URLs & endpoints**: any `http://` or `https://` URL that is not documentation or a public open-source URL
+            - **IP addresses**: any IPv4 (`10.x.x.x`, `192.168.x.x`, `172.x.x.x`) or public IP hardcoded in code
+            - **Port numbers**: ports assigned to variables (e.g. `PORT = 5432`, `port = 8080`)
+            - **Hostnames & server names**: database hosts, internal service hostnames
+            - **Environment names as strings**: `"prod"`, `"production"`, `"staging"`, `"dev"` used as routing logic
+            - **File system paths**: absolute paths (`/home/`, `/var/`, `/tmp/specific-dir/`, `C:\Users\`)
+            - **Database names, schema names, table names** hardcoded in connection logic
+            - **Queue names, topic names**: SQS queues, Pub/Sub topics, Kafka topics
+            - **Email addresses**: hardcoded recipient or sender addresses
+            - **Slack/webhook URLs**: any webhook endpoint URL
+
+            ### 3. Hardcoded Business Logic Values (MEDIUM if found)
+            Flag values that should be in config:
+            - Numeric thresholds, limits, timeouts assigned to named constants without a config source (e.g. `MAX_RETRIES = 3`, `TIMEOUT = 30` — unless clearly a safe default)
+            - Model names, algorithm names hardcoded as strings when they could vary
+            - Feature flag values hardcoded instead of read from config
+            - Date ranges, cutoff dates hardcoded in logic
+
+            ### 4. PII Exposure (HIGH if found)
+            Personal data must never appear in:
+            - `print()`, `logging.*`, `logger.*` calls
+            - Exception messages or tracebacks written to files
+            - Notebook output cells (inspect `outputs` in `.ipynb` JSON)
+            - Test fixtures or sample datasets committed to the repo
+
+            ### 5. Input Validation (MEDIUM if found)
+            - SQL queries built with f-strings or `.format()` using external input — SQL injection risk
+            - File paths derived from user input without sanitization — path traversal risk
+            - Missing schema/column validation when loading DataFrames from external sources
+
+            ### 6. Dependency Hygiene (LOW if found)
+            - Unpinned versions in `requirements.txt` or `pyproject.toml` (e.g. `pandas` instead of `pandas==2.1.4`)
+            - Dependencies from GitHub URLs without a pinned commit hash
+
+            ### 7. Version Control Hygiene (MEDIUM if found)
+            - `.gitignore` missing entries for: `.env`, `*.pem`, `*.key`, `*credentials*`, `data/raw/`, `*.csv`, `*.parquet`
+            - Any data file, credential file, or `.env` file present in the diff
+
+            ## Response Format
+            Post a single PR review comment with this exact structure:
+
+            ```
+            ## 🔒 Security & Hardcoding Scan
+
+            ### CRITICAL
+            - [Finding] — [Rule] — [File:Line] — [Fix: use os.environ["X"] or config]
+            *(or "None")*
+
+            ### HIGH
+            - [Finding] — [Rule] — [File:Line] — [Fix]
+            *(or "None")*
+
+            ### MEDIUM
+            - [Finding] — [Rule] — [File:Line] — [Fix]
+            *(or "None")*
+
+            ### LOW
+            - [Finding] — [Rule] — [File:Line] — [Fix]
+            *(or "None")*
+
+            ### ✅ Checks Passed
+            - [Each category that found zero issues]
+            ```
+
+            If any CRITICAL finding is found, append:
+            ```
+            ⚠️ **Incident Response**: Rotate the exposed credential immediately. Remove from git history with `git filter-repo`. Notify the team lead. Do NOT merge this PR.
+            ```
+
+            Rules:
+            - Be specific: exact file name, line number, and the offending value (masked if secret)
+            - Never suppress a finding because it "looks like a test" or "seems intentional" — flag it and let the developer explain
+            - If a value is ambiguous, flag it as LOW and explain why it's suspicious
+            - Silence is not a green light — if a file is clean, say so explicitly per category
