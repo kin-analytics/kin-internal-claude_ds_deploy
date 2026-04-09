@@ -97,7 +97,7 @@ jobs:
             core.setOutput('request', request);
 
             if (eventType === 'pull_request.opened') {
-              core.setOutput('command', 'security');
+              core.setOutput('command', 'review');
             } else if (['issues.opened', 'issues.reopened'].includes(eventType)) {
               core.setOutput('command', 'triage');
             } else if (request.startsWith("@gemini-cli /review")) {
@@ -131,7 +131,7 @@ jobs:
   security:
     needs: 'dispatch'
     if: |-
-      ${{ needs.dispatch.outputs.command == 'security' }}
+      ${{ needs.dispatch.outputs.command == 'review' }}
     uses: './.github/workflows/gemini-security-review.yml'
     permissions:
       contents: 'read'
@@ -140,9 +140,24 @@ jobs:
       pull-requests: 'write'
     secrets: 'inherit'
 
+  review:
+    needs: 'dispatch'
+    if: |-
+      ${{ needs.dispatch.outputs.command == 'review' }}
+    uses: './.github/workflows/gemini-review.yml'
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      issues: 'write'
+      pull-requests: 'write'
+    with:
+      additional_context: '${{ needs.dispatch.outputs.additional_context }}'
+    secrets: 'inherit'
+
   fallthrough:
     needs:
       - 'dispatch'
+      - 'review'
       - 'security'
     if: |-
       ${{ always() && !cancelled() && (failure() || needs.dispatch.outputs.command == 'fallthrough') }}
