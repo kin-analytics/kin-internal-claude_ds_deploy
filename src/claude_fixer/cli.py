@@ -128,7 +128,9 @@ def main():
 
     if not dry_run:
         # Write version file so DS users can verify what's installed
-        (target_path / "VERSION").write_text(f"claude-ds-tools=={pkg_version}\n")
+        dest_version = target_path / "VERSION"
+        dest_version.write_text(f"claude-ds-tools=={pkg_version}\n")
+        print(f"  updated  : {dest_version.relative_to(project_root)}")
 
     _sync_claude_md(project_root, target_path, dry_run=dry_run)
 
