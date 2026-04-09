@@ -1,0 +1,32 @@
+name: '📦 pip-audit — Dependency CVEs'
+
+on:
+  pull_request:
+    branches:
+      - master
+  schedule:
+    - cron: '0 8 * * 1'  # every Monday 8am UTC
+
+defaults:
+  run:
+    shell: 'bash'
+
+jobs:
+  pip-audit:
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+    steps:
+      - name: 'Checkout repository'
+        uses: 'actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8' # ratchet:actions/checkout@v6
+
+      - name: 'Set up Python'
+        uses: 'actions/setup-python@v5'
+        with:
+          python-version: '3.11'
+
+      - name: 'Install and run pip-audit'
+        run: |-
+          pip install pip-audit
+          pip install -e . 2>/dev/null || true
+          pip-audit
