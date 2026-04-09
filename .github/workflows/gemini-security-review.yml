@@ -1,0 +1,180 @@
+name: '🔒 Gemini Security Review'
+
+on:
+  workflow_call:
+
+concurrency:
+  group: 'gemini-security-review-${{ github.event.pull_request.number }}'
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: 'bash'
+
+jobs:
+  security-review:
+    runs-on: 'ubuntu-latest'
+    timeout-minutes: 7
+    permissions:
+      contents: 'read'
+      id-token: 'write'
+      issues: 'write'
+      pull-requests: 'write'
+    steps:
+      - name: 'Mint identity token'
+        id: 'mint_identity_token'
+        if: |-
+          ${{ vars.APP_ID }}
+        uses: 'actions/create-github-app-token@29824e69f54612133e76f7eaac726eef6c875baf' # ratchet:actions/create-github-app-token@v2
+        with:
+          app-id: '${{ vars.APP_ID }}'
+          private-key: '${{ secrets.APP_PRIVATE_KEY }}'
+          permission-contents: 'read'
+          permission-issues: 'write'
+          permission-pull-requests: 'write'
+
+      - name: 'Checkout repository'
+        uses: 'actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8' # ratchet:actions/checkout@v6
+
+      - name: 'Run Gemini security review'
+        uses: 'google-github-actions/run-gemini-cli@v0' # ratchet:exclude
+        id: 'gemini_security_review'
+        env:
+          GITHUB_TOKEN: '${{ steps.mint_identity_token.outputs.token || secrets.GITHUB_TOKEN || github.token }}'
+          PULL_REQUEST_NUMBER: '${{ github.event.pull_request.number }}'
+          REPOSITORY: '${{ github.repository }}'
+          GEMINI_API_KEY: '${{ secrets.GEMINI_API_KEY }}'
+        with:
+          gcp_location: '${{ vars.GOOGLE_CLOUD_LOCATION }}'
+          gcp_project_id: '${{ vars.GOOGLE_CLOUD_PROJECT }}'
+          gcp_service_account: '${{ vars.SERVICE_ACCOUNT_EMAIL }}'
+          gcp_workload_identity_provider: '${{ vars.GCP_WIF_PROVIDER }}'
+          gemini_api_key: '${{ secrets.GEMINI_API_KEY }}'
+          gemini_cli_version: '${{ vars.GEMINI_CLI_VERSION }}'
+          gemini_debug: '${{ fromJSON(vars.GEMINI_DEBUG || vars.ACTIONS_STEP_DEBUG || false) }}'
+          gemini_model: '${{ vars.GEMINI_MODEL }}'
+          google_api_key: '${{ secrets.GOOGLE_API_KEY }}'
+          use_gemini_code_assist: '${{ vars.GOOGLE_GENAI_USE_GCA }}'
+          use_vertex_ai: '${{ vars.GOOGLE_GENAI_USE_VERTEXAI }}'
+          upload_artifacts: '${{ vars.UPLOAD_ARTIFACTS }}'
+          workflow_name: 'gemini-security-review'
+          github_pr_number: '${{ github.event.pull_request.number }}'
+          settings: |-
+            {
+              "model": {
+                "maxSessionTurns": 25
+              },
+              "telemetry": {
+                "enabled": true,
+                "target": "local",
+                "outfile": ".gemini/telemetry.log"
+              },
+              "mcpServers": {
+                "github": {
+                  "command": "docker",
+                  "args": [
+                    "run",
+                    "-i",
+                    "--rm",
+                    "-e",
+                    "GITHUB_PERSONAL_ACCESS_TOKEN",
+                    "ghcr.io/github/github-mcp-server:v0.27.0"
+                  ],
+                  "includeTools": [
+                    "add_comment_to_pending_review",
+                    "pull_request_read",
+                    "pull_request_review_write"
+                  ],
+                  "env": {
+                    "GITHUB_PERSONAL_ACCESS_TOKEN": "${GITHUB_TOKEN}"
+                  }
+                }
+              },
+              "tools": {
+                "core": [
+                  "run_shell_command(cat)",
+                  "run_shell_command(echo)",
+                  "run_shell_command(grep)",
+                  "run_shell_command(head)",
+                  "run_shell_command(tail)"
+                ]
+              }
+            }
+          prompt: |-
+            You are a security reviewer. Your task is to perform a structured security and data-privacy scan on this pull request.
+
+            Use the GitHub MCP tools to:
+            1. Get the list of changed files in PR #${{ github.event.pull_request.number }} in repository ${{ github.repository }}.
+            2. For each changed file, read its content and scan for the following categories:
+
+            ## Scan Categories
+
+            ### 1. Secrets & Credentials (CRITICAL if found)
+            Scan for hardcoded secrets:
+            - Strings matching `AKIA`, `sk-`, `ghp_`, `xoxb-`, `Bearer `, `password =`, `passwd =`, `secret =`
+            - Base64-looking strings longer than 40 chars assigned to a variable
+            - Connection strings with embedded credentials (e.g. `postgresql://user:pass@host`)
+            - Cloud provider credential files referenced directly in code
+            - Secrets in comments (e.g. `# key: abc123`)
+            If found: show only first 4 chars of the secret + `...` (never show the full value).
+
+            ### 2. PII Exposure (HIGH if found)
+            Check that personal data (names, emails, IDs, financial records, health data) does not appear in:
+            - `print()`, `logging.*`, `logger.*` calls
+            - Exception messages or tracebacks written to files
+            - Notebook output cells (in `.ipynb`, inspect `outputs` in each cell's JSON)
+            - Test fixtures or sample datasets
+
+            ### 3. Version Control Hygiene (MEDIUM if found)
+            Verify `.gitignore` includes:
+            - `.env`, `.env.*`, `*credentials*`, `*secrets*`, `*.pem`, `*.key`
+            - `data/raw/`, `data/client/`, `*.csv`, `*.parquet`, `*.xlsx`
+            Flag any staged file matching these patterns.
+
+            ### 4. Input Validation (MEDIUM if found)
+            Check for:
+            - SQL queries built with string formatting or f-strings using external input
+            - Missing schema validation when loading DataFrames from external sources
+            - File paths derived from user input without sanitization
+
+            ### 5. Dependency Hygiene (LOW if found)
+            Check `requirements.txt` or `pyproject.toml` for:
+            - Unpinned versions (e.g. `pandas` instead of `pandas==2.1.4`)
+            - Dependencies installed from GitHub URLs without a pinned commit hash
+
+            ### 6. Logging & Observability (MEDIUM if found)
+            Verify log entries do not contain sensitive or PII values.
+
+            ## Response Format
+            Post a single PR review comment with this exact structure:
+
+            ```
+            ## 🔒 Security Scan
+
+            ### CRITICAL
+            - [Finding] — [Rule] — [File:Line] — [Recommended fix]
+            *(or "None")*
+
+            ### HIGH
+            - [Finding] — [Rule] — [File:Line] — [Recommended fix]
+            *(or "None")*
+
+            ### MEDIUM
+            - [Finding] — [Rule] — [File:Line] — [Recommended fix]
+            *(or "None")*
+
+            ### LOW
+            - [Finding] — [Rule] — [File:Line] — [Recommended fix]
+            *(or "None")*
+
+            ### ✅ Checks Passed
+            - [List each category that found no issues]
+            ```
+
+            If a CRITICAL finding is found, append this incident response reminder:
+            ```
+            ⚠️ **Incident Response**: Rotate the exposed credential immediately. Remove it from git history using `git filter-repo`. Notify the team lead.
+            ```
+
+            Be specific — include exact file names and line numbers. Never show full secret values.
+            If the file is clean across all categories, say so explicitly — silence is not a green light.
